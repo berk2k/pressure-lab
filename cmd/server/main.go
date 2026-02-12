@@ -3,8 +3,10 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"pressure-lab/internal/queue"
+	"pressure-lab/internal/ratelimit"
 	httpTransport "pressure-lab/internal/transport/http"
 	"pressure-lab/internal/worker"
 )
@@ -15,7 +17,8 @@ func main() {
 	w := worker.New(1)
 	w.Start(q.Channel())
 
-	handler := httpTransport.New(q)
+	limiter := ratelimit.New(3, time.Second)
+	handler := httpTransport.New(q, limiter)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/submit", handler.Submit)
