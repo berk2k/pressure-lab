@@ -13,7 +13,9 @@ not to optimize throughput.
 ## Mental Model
 Client </br>
 ↓</br>
-HTTP API ← backpressure becomes visible here</br>
+HTTP API </br>
+↓</br>
+Rate Limiter ← proactive backpressure begins here  </br>
 ↓</br>
 Admission Control</br>
 ↓</br>
@@ -111,8 +113,169 @@ but pressure silently accumulated as latency and open connections.
 | Failure visibility | Clear and observable | Hidden             |
 | System stability   | Predictable          | Fragile            |
 
-### Current Status
-- Phase 0 complete
-- Baseline and failure mode observed
-- No rate limiting yet
-- No graceful shutdown yet
+## Day 3: Proactive Backpressure with Rate Limiting
+### Setup
+
+A simple token-bucket style rate limiter was introduced
+before queue admission.
+
+```go
+limiter := ratelimit.New(3, time.Second)
+```
+- Maximum 3 requests per second
+- Excess requests receive 429 Too Many Requests
+- Queue admission remains non-blocking
+The request flow became:
+
+Client
+→ HTTP
+
+→ Rate Limiter
+
+→ Non-blocking Queue Admission
+
+→ Worker
+
+### Observed Behavior
+When sending 10 rapid requests:
+```powershell
+202
+202
+202
+429
+429
+429
+429
+429
+429
+429
+```
+Key observation:
+- The queue was not necessarily full
+- Rejections occurred due to policy, not capacity
+- Latency did not increase
+- Handlers did not block
+- The network layer remained stable
+
+### Reactive vs Proactive Backpressure
+| Type      | Triggered When   | Behavior                  | Risk Level |
+| --------- | ---------------- | ------------------------- | ---------- |
+| Reactive  | Queue full       | Rejects after saturation  | Medium     |
+| Blocking  | Queue full       | Latency accumulation      | High       |
+| Proactive | Policy threshold | Rejects before saturation | Low        |
+
+## Stress Scenario Analysis
+## Scenario 1: 100 Clients Send Requests Simultaneously
+### Without Rate Limiting
+- All requests reach the handler
+- Queue fills quickly
+- If blocking:
+    - Connections remain open
+    - Latency increases
+    - Goroutines accumulate
+    - Risk of connection exhaustion 
+- If non-blocking:
+    - Massive burst of 429 responses
+    - Queue still briefly saturated
+System behavior: Reactive and unstable under burst load.
+
+### With Rate Limiting
+- Only a bounded number of requests enter the system per second
+- Queue pressure grows slowly or remains stable
+- Worker pool remains within safe operating limits
+- Rejections are predictable and controlled
+System behavior: Stable under burst load.
+
+## Scenario 2: Clients Retry Aggressively
+
+### Without Rate Limiting
+
+When clients retry immediately after rejection or timeout:
+
+- Traffic multiplies (retry amplification)
+- Queue saturates repeatedly
+- Latency increases further
+- Collapse becomes likely
+
+This creates a **positive feedback loop**:
+
+More retries → More pressure → More failures → More retries
+
+---
+
+### With Rate Limiting
+
+- Retry attempts are also limited
+- Feedback loop is dampened
+- System load remains bounded
+- Recovery becomes possible
+
+Rate limiting acts as a **circuit breaker at the network boundary**.
+
+---
+
+## Scenario 3: Low Client Timeouts
+
+Assume clients timeout after **500ms**.
+
+### Blocking Admission (Day 2 Design)
+
+- Clients timeout before receiving a response
+- They retry
+- Original request may still be processing
+- Duplicate load increases
+- System destabilizes rapidly
+
+---
+
+### With Rate Limiting
+
+- Rejections happen immediately
+- Clients receive explicit overload signals
+- Properly implemented clients back off
+- Duplicate processing risk decreases
+
+---
+
+## Key Insights from Day 3
+
+- Rate limiting transforms overload from a failure into a policy decision.
+- Proactive rejection is healthier than reactive rejection.
+- Latency-based backpressure is dangerous and invisible.
+- Retry amplification is one of the most destructive failure patterns.
+- Stability depends more on admission control than on raw throughput.
+
+---
+
+## System Evolution
+
+### Day 1: Reactive Backpressure
+Queue-based overload handling.
+
+### Day 2: Latency-Based Overload
+Blocking admission design.
+
+### Day 3: Proactive, Policy-Driven Backpressure
+Rate limiting.
+
+---
+
+## Current System Characteristics
+
+The system is now:
+
+- Predictable
+- Bounded
+- Explicit in overload signaling
+- Resistant to retry storms
+
+---
+
+## Next Experiments
+
+Further experiments will evaluate:
+
+- Scaling behavior
+- Backlog draining speed
+- Graceful shutdown under load
+
