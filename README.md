@@ -128,6 +128,7 @@ limiter := ratelimit.New(3, time.Second)
 The request flow became:
 
 Client
+
 → HTTP
 
 → Rate Limiter
