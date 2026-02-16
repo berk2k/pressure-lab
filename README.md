@@ -248,35 +248,146 @@ Assume clients timeout after **500ms**.
 
 ---
 
-## System Evolution
+## Day 4: Scaling, Capacity, and the Role of Rate Limiting
 
-### Day 1: Reactive Backpressure
-Queue-based overload handling.
+After introducing rate limiting, we explored how scaling interacts with system capacity.
 
-### Day 2: Latency-Based Overload
-Blocking admission design.
+### Key Question
 
-### Day 3: Proactive, Policy-Driven Backpressure
-Rate limiting.
+If the business requires 50 requests per second (RPS),
+should we just increase the rate limit to 50?
 
----
-
-## Current System Characteristics
-
-The system is now:
-
-- Predictable
-- Bounded
-- Explicit in overload signaling
-- Resistant to retry storms
+The answer depends on **processing capacity**, not policy.
 
 ---
 
-## Next Experiments
+## Capacity vs Rate Limit
 
-Further experiments will evaluate:
+True system capacity is defined by processing power:
 
-- Scaling behavior
-- Backlog draining speed
-- Graceful shutdown under load
+Capacity = worker_count × worker_throughput
+
+
+Example:
+
+- 1 worker
+- Each task takes 500ms
+→ ~2 RPS per worker
+
+To support 50 RPS:
+
+50 / 2 = 25 workers (theoretical minimum)
+
+
+Simply increasing the rate limit to 50 without scaling workers
+would overload the system.
+
+> Rate limit does not increase capacity.  
+> It only controls admission.
+
+---
+
+## Why Rate Limit ≠ Capacity
+
+Rate limiting is a **stability mechanism**.
+
+It defines how much traffic is allowed into the system,
+but it does not determine how fast the system can process tasks.
+
+If:
+
+- Capacity = 2 RPS
+- Rate limit = 50 RPS
+
+Then:
+
+- 50 requests enter
+- Only 2 are processed per second
+- Queue fills
+- Latency increases
+- System destabilizes
+
+Increasing the rate limit without scaling
+only accelerates failure.
+
+---
+
+## Why Rate Limit Should Be Slightly Below Capacity
+
+Even if theoretical capacity is 50 RPS,
+real systems fluctuate due to:
+
+- CPU spikes
+- GC pauses
+- Lock contention
+- Network jitter
+
+Therefore, rate limit should usually be:
+
+~70–90% of sustainable capacity
+
+
+This creates safety headroom and improves stability.
+
+---
+
+## Large Queue ≠ Stability
+
+We also considered increasing queue size (e.g., 1000).
+
+This does not improve stability.
+
+Instead, it:
+
+- Hides overload
+- Increases latency
+- Increases memory pressure
+- Delays failure instead of preventing it
+
+A large queue absorbs bursts,
+but it does not solve sustained overload.
+
+> A large queue hides overload.  
+> A rate limiter prevents overload.
+
+---
+
+## Scaling vs Rate Limiting
+
+| Problem | Solution |
+|----------|----------|
+| Processing too slow | Scaling |
+| Burst traffic | Rate limiting |
+| Retry amplification | Explicit 429 |
+| Latency accumulation | Non-blocking admission |
+
+---
+
+## Core Insights So Far
+
+1. Scaling increases throughput.
+2. Rate limiting preserves stability.
+3. Scaling does not replace admission control.
+4. Rate limit must reflect sustainable capacity.
+5. Stability is more important than raw throughput.
+
+---
+
+## System Evolution Summary
+
+- Day 1: Reactive backpressure (queue-based rejection)
+- Day 2: Blocking admission (latency-based overload)
+- Day 3: Proactive rate limiting
+- Day 4: Capacity modeling and scaling analysis
+
+The system now demonstrates:
+
+- Explicit overload signaling
+- Bounded resource usage
+- Controlled admission
+- Capacity-aware scaling decisions
+
+
+
+
 
