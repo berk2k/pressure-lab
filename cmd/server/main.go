@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"pressure-lab/internal/idempotency"
 	"pressure-lab/internal/queue"
 	"pressure-lab/internal/ratelimit"
 	httpTransport "pressure-lab/internal/transport/http"
@@ -18,7 +19,8 @@ func main() {
 	w.Start(q.Channel())
 
 	limiter := ratelimit.New(3, time.Second)
-	handler := httpTransport.New(q, limiter)
+	store := idempotency.New()
+	handler := httpTransport.New(q, limiter, store)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/submit", handler.Submit)
