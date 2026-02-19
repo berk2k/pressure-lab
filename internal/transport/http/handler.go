@@ -30,10 +30,17 @@ func (h *Handler) Submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.store.Exists(id) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("already processed\n"))
-		return
+	if status, exists := h.store.Get(id); exists {
+		if status == idempotency.Processing {
+			http.Error(w, "still processing\n", http.StatusConflict)
+			return
+		}
+
+		if status == idempotency.Processed {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("already processed\n"))
+			return
+		}
 	}
 
 	if !h.limiter.Allow() {
@@ -50,8 +57,7 @@ func (h *Handler) Submit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "queue full\n", http.StatusTooManyRequests)
 		return
 	}
-
-	h.store.Mark(id)
+	h.store.SetProcessing(id)
 
 	w.WriteHeader(http.StatusAccepted)
 	w.Write([]byte("accepted\n"))

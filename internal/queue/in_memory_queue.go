@@ -25,3 +25,7 @@ func (q *InMemoryQueue) TryEnqueue(task domain.Task) bool {
 func (q *InMemoryQueue) Channel() <-chan domain.Task {
 	return q.ch
 }
+
+func (q *InMemoryQueue) Close() {
+	close(q.ch)
+}

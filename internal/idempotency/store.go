@@ -2,25 +2,42 @@ package idempotency
 
 import "sync"
 
+type Status int
+
+const (
+	Processing Status = iota
+	Processed
+)
+
 type Store struct {
 	mu   sync.Mutex
-	seen map[string]bool
+	data map[string]Status
 }
 
 func New() *Store {
 	return &Store{
-		seen: make(map[string]bool),
+		data: make(map[string]Status),
 	}
 }
 
-func (s *Store) Exists(id string) bool {
+func (s *Store) Get(id string) (Status, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.seen[id]
+
+	status, ok := s.data[id]
+	return status, ok
 }
 
-func (s *Store) Mark(id string) {
+func (s *Store) SetProcessing(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.seen[id] = true
+
+	s.data[id] = Processing
+}
+
+func (s *Store) SetProcessed(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data[id] = Processed
 }
