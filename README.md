@@ -387,6 +387,114 @@ The system now demonstrates:
 - Controlled admission
 - Capacity-aware scaling decisions
 
+---
+
+## Day 5: True Graceful Shutdown & 3-State Idempotency
+
+Today the system was upgraded to production-grade behavior.
+
+### 1) Proper Worker Drain
+
+Shutdown sequence was redesigned:
+
+1. Stop HTTP admission
+2. Close internal queue
+3. Workers drain remaining tasks
+4. WaitGroup ensures all workers exit
+5. Process exits cleanly
+
+This guarantees:
+
+- No task is silently lost
+- In-flight processing completes
+- Bounded and predictable shutdown behavior
+
+---
+
+### 2) 3-State Idempotency Model
+
+Idempotency was upgraded from a simple boolean flag to a state machine:
+
+NotSeen → Processing → Processed
+
+
+Behavior:
+
+- First request → enqueue → state = Processing
+- Duplicate during processing → 409 Conflict ("still processing")
+- After worker completion → state = Processed
+- Duplicate after completion → 200 OK ("already processed")
+
+This prevents:
+
+- Double enqueue
+- Duplicate execution
+- Race conditions during retries
+
+---
+
+### 3) Correct Layering
+
+Idempotency responsibilities were moved to proper layers:
+
+- Handler: admission + duplicate check
+- Worker: marks completion
+- Store: thread-safe state machine
+
+This separates transport-level control from business-level completion.
+
+---
+
+## Final System Capabilities
+
+The system now demonstrates:
+
+- Explicit backpressure via HTTP 429
+- Rate-limited admission control
+- Bounded internal queue
+- Capacity-aware scaling behavior
+- Graceful shutdown with worker drain
+- 3-state idempotent task processing
+
+---
+
+## What This Lab Proved
+
+1. Scaling does not guarantee stability.
+2. Rate limiting protects capacity.
+3. Large queues hide overload but amplify latency.
+4. Graceful shutdown requires layered coordination.
+5. Idempotency must be modeled as a state machine.
+6. Data integrity ultimately belongs to the persistence layer.
+
+---
+
+## Mental Model (Final)
+
+Client  
+
+↓  
+
+HTTP Admission (Rate Limit + Idempotency Check)  
+
+↓  
+
+Bounded Queue  
+
+↓  
+
+Worker Pool  
+
+↓  
+
+Completion Marking  
+
+Pressure is absorbed at the edges.  
+Integrity is enforced at completion.
+
+
+
+
 
 
 
